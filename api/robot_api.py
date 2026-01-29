@@ -837,13 +837,9 @@ def open_terminal_window(title, command):
     # Use bash explicitly, not sh
     bash_cmd = '/bin/bash'
     
-    # Find docker command
-    docker_cmd = find_docker_command()
-    
-    # Replace 'docker' in command with full path if needed
-    if docker_cmd != 'docker' and 'docker exec' in command:
-        command = command.replace('docker exec', f'{docker_cmd} exec')
-        print(f"Using docker from: {docker_cmd}")
+    # Don't replace docker in command - it's already been set with full path in start_3d_digital_twin()
+    # The command passed in already has the correct docker path
+    print(f"Command to execute: {command}")
     
     # Detect which terminal is actually being used
     def detect_terminal():
