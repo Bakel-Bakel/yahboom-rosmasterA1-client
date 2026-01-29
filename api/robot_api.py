@@ -908,43 +908,10 @@ def start_3d_digital_twin():
                 'display_pid': active_processes['digital_twin_display'].pid if active_processes['digital_twin_display'] else None
             }), 200
         
-        # Ensure docker container is running before proceeding
-        container_name = 'cool_solomon'
-        print(f"Ensuring docker container '{container_name}' is running...")
-        if not ensure_docker_container_running(container_name):
-            error_msg = f"Docker container '{container_name}' is not running and could not be started"
-            print(f"ERROR: {error_msg}")
-            return jsonify({
-                'success': False,
-                'error': error_msg
-            }), 500
-        
-        # Verify container is ready by testing a simple command
-        print(f"Verifying container '{container_name}' is ready...")
-        try:
-            test_result = subprocess.run(
-                ['docker', 'exec', container_name, 'bash', '-c', 'echo "Container ready"'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if test_result.returncode != 0:
-                error_msg = f"Docker container '{container_name}' is not responding properly"
-                print(f"ERROR: {error_msg}")
-                return jsonify({
-                    'success': False,
-                    'error': error_msg
-                }), 500
-            print(f"✓ Container '{container_name}' is ready")
-        except Exception as e:
-            print(f"Warning: Could not verify container readiness: {e}")
-            # Continue anyway
-        
         import time
         
-        # Terminal 1: Start camera launch in NEW separate terminal window
-        # First enter docker container, then run the command
-        print("Opening Terminal 1 for camera launch...")
+        # Terminal 1: Open new terminal, enter docker container, then run camera launch
+        print("Opening Terminal 1: Entering docker container and starting camera launch...")
         camera_command = "docker exec -it cool_solomon bash -c 'ros2 launch ascamera hp60c.launch.py'"
         camera_process = open_terminal_window("3D Digital Twin - Camera", camera_command)
         active_processes['digital_twin_camera'] = camera_process
@@ -953,16 +920,14 @@ def start_3d_digital_twin():
         print("Waiting 5 seconds before starting mapping...")
         time.sleep(5)
         
-        # Terminal 2: Start mapping launch in NEW separate terminal window
-        # First enter docker container, then run the command
-        print("Opening Terminal 2 for RTABMap mapping launch...")
+        # Terminal 2: Open new terminal, enter docker container, then run mapping launch
+        print("Opening Terminal 2: Entering docker container and starting mapping launch...")
         mapping_command = "docker exec -it cool_solomon bash -c 'ros2 launch yahboomcar_nav map_rtabmap_launch.py'"
         mapping_process = open_terminal_window("3D Digital Twin - Mapping", mapping_command)
         active_processes['digital_twin_mapping'] = mapping_process
         
-        # Terminal 3: Start display launch in NEW separate terminal window
-        # First enter docker container, then run the command
-        print("Opening Terminal 3 for RTABMap display launch...")
+        # Terminal 3: Open new terminal, enter docker container, then run display launch
+        print("Opening Terminal 3: Entering docker container and starting display launch...")
         display_command = "docker exec -it cool_solomon bash -c 'ros2 launch yahboomcar_nav display_rtabmap_map_launch.py'"
         display_process = open_terminal_window("3D Digital Twin - Display", display_command)
         active_processes['digital_twin_display'] = display_process
