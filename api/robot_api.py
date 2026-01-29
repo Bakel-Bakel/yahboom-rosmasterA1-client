@@ -744,19 +744,68 @@ def get_navigation_status():
 def check_docker_container(container_name):
     """Check if docker container exists and is running."""
     try:
+        # Use docker ps with filter to check if container is running
         result = subprocess.run(
-            f"docker ps --format '{{{{.Names}}}}' | grep -q '^{container_name}$'",
-            shell=True,
+            ['docker', 'ps', '--filter', f'name={container_name}', '--format', '{{.Names}}'],
             capture_output=True,
-            text=True
+            text=True,
+            timeout=5
         )
-        return result.returncode == 0
+        if result.returncode == 0:
+            names = result.stdout.strip().split('\n')
+            return container_name in names
+        return False
     except Exception as e:
         print(f"Error checking docker container: {e}")
         return False
 
+def ensure_docker_container_running(container_name):
+    """Ensure docker container is running, start it if it exists but is stopped."""
+    try:
+        # Check if container is running
+        if check_docker_container(container_name):
+            print(f"✓ Docker container '{container_name}' is already running")
+            return True
+        
+        # Check if container exists but is stopped
+        result = subprocess.run(
+            ['docker', 'ps', '-a', '--filter', f'name={container_name}', '--format', '{{.Names}}'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode == 0:
+            names = result.stdout.strip().split('\n')
+            if container_name in names:
+                # Container exists but is stopped, start it
+                print(f"Starting stopped docker container '{container_name}'...")
+                start_result = subprocess.run(
+                    ['docker', 'start', container_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if start_result.returncode == 0:
+                    print(f"✓ Docker container '{container_name}' started successfully")
+                    # Wait a moment for container to be ready
+                    import time
+                    time.sleep(2)
+                    return True
+                else:
+                    print(f"✗ Failed to start container: {start_result.stderr}")
+                    return False
+        
+        # Container doesn't exist
+        print(f"✗ Docker container '{container_name}' does not exist")
+        return False
+        
+    except Exception as e:
+        print(f"Error ensuring docker container is running: {e}")
+        return False
+
 def open_terminal_window(title, command):
-    """Open a visible terminal window with the given command."""
+    """Open a NEW visible terminal window with the given command (separate from robot_api terminal)."""
     import time
     
     # Check if we have DISPLAY (GUI available)
@@ -765,16 +814,21 @@ def open_terminal_window(title, command):
     if display:
         # Try gnome-terminal first (most common on Ubuntu/Debian)
         try:
-            # Use gnome-terminal with -- bash -c to run command and keep terminal open
+            # Use gnome-terminal with --new-window to ensure it's a NEW terminal
+            # Use -- bash -c to run command and keep terminal open
             process = subprocess.Popen(
                 [
                     'gnome-terminal',
+                    '--new-window',  # Force new window
                     '--title', title,
                     '--', 'bash', '-c', f"{command}; exec bash"  # Keep terminal open after command
                 ],
-                preexec_fn=os.setsid
+                preexec_fn=os.setsid,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
             )
-            time.sleep(1)  # Give terminal a moment to open
+            time.sleep(1.5)  # Give terminal a moment to open
+            print(f"✓ Opened new terminal window: {title}")
             return process
         except FileNotFoundError:
             pass
@@ -787,23 +841,26 @@ def open_terminal_window(title, command):
                     '-title', title,
                     '-e', 'bash', '-c', f"{command}; exec bash"  # Keep terminal open
                 ],
-                preexec_fn=os.setsid
+                preexec_fn=os.setsid,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
             )
-            time.sleep(1)
+            time.sleep(1.5)
+            print(f"✓ Opened new xterm window: {title}")
             return process
         except FileNotFoundError:
             pass
     
     # Fallback: Use screen session (works without GUI)
     # Create a screen session with a name
-    screen_name = title.lower().replace(' ', '_')
+    screen_name = title.lower().replace(' ', '_').replace('-', '_')
     try:
         # Start screen session in detached mode with the command
         subprocess.run(
             ['screen', '-dmS', screen_name, 'bash', '-c', command],
             check=True
         )
-        print(f"Started screen session '{screen_name}' for {title}")
+        print(f"✓ Started screen session '{screen_name}' for {title}")
         print(f"  To view: screen -r {screen_name}")
         # Return a dummy process object
         class ScreenProcess:
@@ -824,11 +881,13 @@ def open_terminal_window(title, command):
     except Exception as e:
         print(f"Failed to start screen session: {e}")
         # Last resort: run in background but log output
+        log_file = f'/tmp/{screen_name}.log'
+        print(f"  Logging to: {log_file}")
         return subprocess.Popen(
             command,
             shell=True,
             preexec_fn=os.setsid,
-            stdout=open(f'/tmp/{screen_name}.log', 'w'),
+            stdout=open(log_file, 'w'),
             stderr=subprocess.STDOUT
         )
 
@@ -849,19 +908,43 @@ def start_3d_digital_twin():
                 'display_pid': active_processes['digital_twin_display'].pid if active_processes['digital_twin_display'] else None
             }), 200
         
-        # Check if docker container exists
-        if not check_docker_container('cool_solomon'):
-            error_msg = "Docker container 'cool_solomon' not found or not running"
+        # Ensure docker container is running before proceeding
+        container_name = 'cool_solomon'
+        print(f"Ensuring docker container '{container_name}' is running...")
+        if not ensure_docker_container_running(container_name):
+            error_msg = f"Docker container '{container_name}' is not running and could not be started"
             print(f"ERROR: {error_msg}")
             return jsonify({
                 'success': False,
                 'error': error_msg
             }), 500
         
+        # Verify container is ready by testing a simple command
+        print(f"Verifying container '{container_name}' is ready...")
+        try:
+            test_result = subprocess.run(
+                ['docker', 'exec', container_name, 'bash', '-c', 'echo "Container ready"'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if test_result.returncode != 0:
+                error_msg = f"Docker container '{container_name}' is not responding properly"
+                print(f"ERROR: {error_msg}")
+                return jsonify({
+                    'success': False,
+                    'error': error_msg
+                }), 500
+            print(f"✓ Container '{container_name}' is ready")
+        except Exception as e:
+            print(f"Warning: Could not verify container readiness: {e}")
+            # Continue anyway
+        
         import time
         
-        # Terminal 1: Start camera launch in visible terminal
-        print("Starting camera launch in docker container (Terminal 1)...")
+        # Terminal 1: Start camera launch in NEW separate terminal window
+        # First enter docker container, then run the command
+        print("Opening Terminal 1 for camera launch...")
         camera_command = "docker exec -it cool_solomon bash -c 'ros2 launch ascamera hp60c.launch.py'"
         camera_process = open_terminal_window("3D Digital Twin - Camera", camera_command)
         active_processes['digital_twin_camera'] = camera_process
@@ -870,15 +953,16 @@ def start_3d_digital_twin():
         print("Waiting 5 seconds before starting mapping...")
         time.sleep(5)
         
-        # Terminal 1 (continued): Start mapping launch in same terminal (chained)
-        # Actually, let's use a separate terminal for mapping
-        print("Starting RTABMap mapping launch in docker container (Terminal 2)...")
+        # Terminal 2: Start mapping launch in NEW separate terminal window
+        # First enter docker container, then run the command
+        print("Opening Terminal 2 for RTABMap mapping launch...")
         mapping_command = "docker exec -it cool_solomon bash -c 'ros2 launch yahboomcar_nav map_rtabmap_launch.py'"
         mapping_process = open_terminal_window("3D Digital Twin - Mapping", mapping_command)
         active_processes['digital_twin_mapping'] = mapping_process
         
-        # Terminal 3: Start display launch in separate terminal
-        print("Starting RTABMap display launch in docker container (Terminal 3)...")
+        # Terminal 3: Start display launch in NEW separate terminal window
+        # First enter docker container, then run the command
+        print("Opening Terminal 3 for RTABMap display launch...")
         display_command = "docker exec -it cool_solomon bash -c 'ros2 launch yahboomcar_nav display_rtabmap_map_launch.py'"
         display_process = open_terminal_window("3D Digital Twin - Display", display_command)
         active_processes['digital_twin_display'] = display_process
