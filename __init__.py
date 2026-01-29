@@ -1,1 +1,1 @@
-# Robot Client Package
+# ROSMASTER-A1 Robot Client API
