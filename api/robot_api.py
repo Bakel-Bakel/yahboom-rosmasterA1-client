@@ -1156,9 +1156,50 @@ def start_3d_digital_twin():
         docker_cmd = find_docker_command()
         print(f"Using docker command: {docker_cmd}")
         
+        # ------------------------------------------------------------------
+        # Extra debug: check ROS2 availability inside the docker container
+        # BEFORE opening the visible terminals. This helps narrow down
+        # issues like "ros2: command not found" inside the container.
+        # ------------------------------------------------------------------
+        try:
+            debug_cmd = (
+                f"{docker_cmd} exec flamboyant_wilbur "
+                "/bin/bash -c '"
+                "echo \"[DEBUG inside container] PATH=$PATH\"; "
+                "which ros2 2>/dev/null || echo \"[DEBUG inside container] ros2 NOT found in PATH\"; "
+                "env | grep -E \"^(ROS_|AMENT_)\" || echo \"[DEBUG inside container] No ROS_* or AMENT_* env vars\""
+                "'"
+            )
+            print(f"Running docker ROS2 debug command:\n  {debug_cmd}")
+            debug_result = subprocess.run(
+                debug_cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+            print("[DEBUG docker ROS2] return code:", debug_result.returncode)
+            if debug_result.stdout:
+                print("[DEBUG docker ROS2] STDOUT:\n" + debug_result.stdout)
+            if debug_result.stderr:
+                print("[DEBUG docker ROS2] STDERR:\n" + debug_result.stderr)
+        except Exception as e:
+            print(f"[DEBUG docker ROS2] Failed to run debug command: {e}")
+        
         # Terminal 1: Open new terminal, enter docker container, then run camera launch
         print("Opening Terminal 1: Entering docker container and starting camera launch...")
-        camera_command = f"{docker_cmd} exec -it flamboyant_wilbur /bin/bash -c 'ros2 launch ascamera hp60c.launch.py'"
+        camera_command = (
+            f"{docker_cmd} exec -it flamboyant_wilbur /bin/bash -c "
+            "'echo \"[CAMERA] Attached to container flamboyant_wilbur\"; "
+            "echo \"[CAMERA] Waiting for /opt/ros/humble/setup.bash\"; "
+            "until [ -f /opt/ros/humble/setup.bash ]; do sleep 1; done; "
+            "echo \"[CAMERA] Sourcing /opt/ros/humble/setup.bash\"; "
+            "source /opt/ros/humble/setup.bash; "
+            "echo \"[CAMERA] PATH=$PATH\"; "
+            "which ros2 2>/dev/null || echo \"[CAMERA] ros2 NOT found in PATH\"; "
+            "env | grep -E \"^(ROS_|AMENT_)\" || echo \"[CAMERA] No ROS_* or AMENT_* env vars\"; "
+            "ros2 launch ascamera hp60c.launch.py'"
+        )
         camera_process = open_terminal_window("3D Digital Twin - Camera", camera_command)
         active_processes['digital_twin_camera'] = camera_process
         
@@ -1168,13 +1209,35 @@ def start_3d_digital_twin():
         
         # Terminal 2: Open new terminal, enter docker container, then run mapping launch
         print("Opening Terminal 2: Entering docker container and starting mapping launch...")
-        mapping_command = f"{docker_cmd} exec -it flamboyant_wilbur /bin/bash -c 'ros2 launch yahboomcar_nav map_rtabmap_launch.py'"
+        mapping_command = (
+            f"{docker_cmd} exec -it flamboyant_wilbur /bin/bash -c "
+            "'echo \"[MAPPING] Attached to container flamboyant_wilbur\"; "
+            "echo \"[MAPPING] Waiting for /opt/ros/humble/setup.bash\"; "
+            "until [ -f /opt/ros/humble/setup.bash ]; do sleep 1; done; "
+            "echo \"[MAPPING] Sourcing /opt/ros/humble/setup.bash\"; "
+            "source /opt/ros/humble/setup.bash; "
+            "echo \"[MAPPING] PATH=$PATH\"; "
+            "which ros2 2>/dev/null || echo \"[MAPPING] ros2 NOT found in PATH\"; "
+            "env | grep -E \"^(ROS_|AMENT_)\" || echo \"[MAPPING] No ROS_* or AMENT_* env vars\"; "
+            "ros2 launch yahboomcar_nav map_rtabmap_launch.py'"
+        )
         mapping_process = open_terminal_window("3D Digital Twin - Mapping", mapping_command)
         active_processes['digital_twin_mapping'] = mapping_process
         
         # Terminal 3: Open new terminal, enter docker container, then run display launch
         print("Opening Terminal 3: Entering docker container and starting display launch...")
-        display_command = f"{docker_cmd} exec -it flamboyant_wilbur /bin/bash -c 'ros2 launch yahboomcar_nav display_rtabmap_map_launch.py'"
+        display_command = (
+            f"{docker_cmd} exec -it flamboyant_wilbur /bin/bash -c "
+            "'echo \"[DISPLAY] Attached to container flamboyant_wilbur\"; "
+            "echo \"[DISPLAY] Waiting for /opt/ros/humble/setup.bash\"; "
+            "until [ -f /opt/ros/humble/setup.bash ]; do sleep 1; done; "
+            "echo \"[DISPLAY] Sourcing /opt/ros/humble/setup.bash\"; "
+            "source /opt/ros/humble/setup.bash; "
+            "echo \"[DISPLAY] PATH=$PATH\"; "
+            "which ros2 2>/dev/null || echo \"[DISPLAY] ros2 NOT found in PATH\"; "
+            "env | grep -E \"^(ROS_|AMENT_)\" || echo \"[DISPLAY] No ROS_* or AMENT_* env vars\"; "
+            "ros2 launch yahboomcar_nav display_rtabmap_map_launch.py'"
+        )
         display_process = open_terminal_window("3D Digital Twin - Display", display_command)
         active_processes['digital_twin_display'] = display_process
         
