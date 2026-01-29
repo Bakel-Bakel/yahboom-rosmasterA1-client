@@ -18,6 +18,7 @@ import requests
 import tempfile
 import shutil
 import pwd
+import socket
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -805,6 +806,71 @@ def ensure_docker_container_running(container_name):
         print(f"Error ensuring docker container is running: {e}")
         return False
 
+def is_running_in_docker():
+    """Check if we're running inside a Docker container."""
+    # Check for .dockerenv file (exists in Docker containers)
+    if os.path.exists('/.dockerenv'):
+        return True
+    
+    # Check cgroup (Docker containers have 'docker' in cgroup)
+    try:
+        with open('/proc/self/cgroup', 'r') as f:
+            cgroup_content = f.read()
+            if 'docker' in cgroup_content:
+                return True
+    except:
+        pass
+    
+    return False
+
+def get_host_docker_command():
+    """
+    Get docker command that works from inside a container.
+    Requires Docker socket to be mounted: -v /var/run/docker.sock:/var/run/docker.sock
+    And optionally docker binary: -v /usr/bin/docker:/usr/bin/docker
+    """
+    # Check if docker socket is available (required for docker commands from inside container)
+    docker_socket = '/var/run/docker.sock'
+    if not os.path.exists(docker_socket):
+        print(f"⚠ ERROR: Docker socket not found at {docker_socket}")
+        print("  To fix: Mount the Docker socket when starting the container:")
+        print("  docker run -v /var/run/docker.sock:/var/run/docker.sock ...")
+        return None
+    
+    # Try to find docker binary (might be mounted from host or installed in container)
+    docker_paths = [
+        '/usr/bin/docker',           # Host docker binary (if mounted)
+        '/usr/local/bin/docker',    # Alternative location
+        'docker'                     # From PATH (if docker client installed in container)
+    ]
+    
+    for docker_path in docker_paths:
+        try:
+            # Test if docker works by checking version
+            test_result = subprocess.run(
+                [docker_path, '--version'],
+                capture_output=True,
+                text=True,
+                timeout=2,
+                env=os.environ.copy()
+            )
+            if test_result.returncode == 0:
+                print(f"✓ Found working docker at: {docker_path}")
+                print(f"  Docker version: {test_result.stdout.strip()}")
+                return docker_path
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            print(f"  Failed to test {docker_path}: {e}")
+            continue
+    
+    print("⚠ WARNING: Could not find working docker command")
+    print("  Options:")
+    print("  1. Mount host docker binary: docker run -v /usr/bin/docker:/usr/bin/docker ...")
+    print("  2. Install docker client in container: apt-get install docker.io")
+    print("  3. Use Docker API directly via socket (more complex)")
+    return None
+
 def find_docker_command():
     """Find the docker command. Returns /usr/bin/docker (confirmed location)."""
     # Debug: Check runtime environment
@@ -824,9 +890,67 @@ def find_docker_command():
         except:
             print("DEBUG: Could not determine user")
     
+    # Check if we're running in Docker
+    in_docker = is_running_in_docker()
+    container_name = get_container_name()
+    print(f"DEBUG: Running in Docker container: {in_docker}")
+    if container_name:
+        print(f"DEBUG: Container name: {container_name}")
+    
+    if in_docker:
+        print("⚠ Running inside Docker container - need access to host docker")
+        if container_name:
+            print(f"  Container name: {container_name}")
+        docker_path = get_host_docker_command()
+        if docker_path:
+            return docker_path
+        else:
+            print("⚠ ERROR: Cannot access docker from inside container!")
+            print("  Solution: When starting the container, mount Docker socket and binary:")
+            print("  docker run -v /var/run/docker.sock:/var/run/docker.sock \\")
+            print("             -v /usr/bin/docker:/usr/bin/docker \\")
+            print("             ...")
+            if container_name:
+                print(f"  Or execute from host: docker exec {container_name} <command>")
+            print("  Falling back to /usr/bin/docker (will likely fail)")
+    
+    # Check if docker is a symlink and what it points to
+    docker_path = '/usr/bin/docker'
+    try:
+        if os.path.islink(docker_path):
+            real_path = os.readlink(docker_path)
+            if not os.path.isabs(real_path):
+                real_path = os.path.join(os.path.dirname(docker_path), real_path)
+            print(f"DEBUG: /usr/bin/docker is a symlink pointing to: {real_path}")
+            # Check if the target exists
+            if os.path.exists(real_path):
+                print(f"DEBUG: Symlink target exists: {real_path}")
+            else:
+                print(f"DEBUG: WARNING - Symlink target does NOT exist: {real_path}")
+        else:
+            print(f"DEBUG: /usr/bin/docker is not a symlink")
+    except Exception as e:
+        print(f"DEBUG: Could not check symlink: {e}")
+    
+    # Try to verify docker actually works by running it
+    try:
+        test_result = subprocess.run(
+            [docker_path, '--version'],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            env=os.environ.copy()
+        )
+        if test_result.returncode == 0:
+            print(f"✓ Verified docker works: {docker_path}")
+            print(f"  Docker version: {test_result.stdout.strip()}")
+        else:
+            print(f"⚠ Docker test failed: {test_result.stderr}")
+    except Exception as e:
+        print(f"⚠ Could not test docker: {e}")
+    
     # Hardcoded: Use /usr/bin/docker (confirmed location from terminal: which docker)
     # Even if os.path.exists() fails in Python, we know docker is at /usr/bin/docker
-    docker_path = '/usr/bin/docker'
     print(f"Using docker at: {docker_path} (hardcoded - confirmed from terminal)")
     return docker_path
 
@@ -889,12 +1013,15 @@ def open_terminal_window(title, command):
         for term_cmd in terminals_to_try:
             try:
                 if term_cmd == 'gnome-terminal':
+                    # Escape the command properly for bash -c
+                    # Use single quotes around the entire command to avoid quote issues
+                    escaped_command = command.replace("'", "'\"'\"'")  # Escape single quotes
                     process = subprocess.Popen(
                         [
                             'gnome-terminal',
                             '--new-window',
                             '--title', title,
-                            '--', bash_cmd, '-c', f"{command}; exec {bash_cmd}"
+                            '--', bash_cmd, '-c', f"{escaped_command}; exec {bash_cmd}"
                         ],
                         preexec_fn=os.setsid,
                         stdout=subprocess.DEVNULL,
@@ -963,7 +1090,23 @@ def open_terminal_window(title, command):
     
     # Ensure PATH includes common locations for docker and other tools
     env = os.environ.copy()
-    env['PATH'] = '/usr/bin:/usr/local/bin:/snap/bin:' + env.get('PATH', '')
+    env['PATH'] = '/usr/bin:/usr/local/bin:/snap/bin:/bin:' + env.get('PATH', '')
+    
+    # Check if docker is accessible before running
+    try:
+        test_result = subprocess.run(
+            ['/usr/bin/docker', '--version'],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            env=env
+        )
+        if test_result.returncode == 0:
+            print(f"✓ Docker is accessible: {test_result.stdout.strip()}")
+        else:
+            print(f"⚠ Docker test failed: {test_result.stderr}")
+    except Exception as e:
+        print(f"⚠ Could not test docker before execution: {e}")
     
     process = subprocess.Popen(
         command,
