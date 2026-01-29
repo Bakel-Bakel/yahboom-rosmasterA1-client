@@ -17,6 +17,7 @@ import sys
 import requests
 import tempfile
 import shutil
+import pwd
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -805,7 +806,7 @@ def ensure_docker_container_running(container_name):
         return False
 
 def find_docker_command():
-    """Find the docker command, checking common locations."""
+    """Find the docker command. Returns /usr/bin/docker (confirmed location)."""
     # Debug: Check runtime environment
     try:
         runtime_path = os.environ.get('PATH', 'NOT SET')
@@ -823,53 +824,11 @@ def find_docker_command():
         except:
             print("DEBUG: Could not determine user")
     
-    # Check common docker locations (in order of likelihood)
-    docker_paths = [
-        '/usr/bin/docker',      # Most common location (Yahboom confirmed)
-        '/usr/local/bin/docker',
-        '/snap/bin/docker',
-    ]
-    
-    print(f"DEBUG: Checking docker paths: {docker_paths}")
-    
-    # First check if files exist
-    for docker_path in docker_paths:
-        exists = os.path.exists(docker_path)
-        executable = os.access(docker_path, os.X_OK) if exists else False
-        print(f"DEBUG: Checking {docker_path} - Exists: {exists}, Executable: {executable}")
-        
-        if exists and executable:
-            print(f"✓ Found docker at: {docker_path}")
-            return docker_path
-    
-    # If not found in common locations, try 'which docker' with proper PATH
-    try:
-        # Ensure PATH includes common locations
-        env = os.environ.copy()
-        env['PATH'] = '/usr/bin:/usr/local/bin:/snap/bin:' + env.get('PATH', '')
-        
-        which_result = subprocess.run(
-            ['which', 'docker'],
-            capture_output=True,
-            text=True,
-            timeout=2,
-            env=env
-        )
-        if which_result.returncode == 0:
-            docker_path = which_result.stdout.strip()
-            print(f"✓ Found docker via 'which': {docker_path}")
-            return docker_path
-    except Exception as e:
-        print(f"Could not find docker with 'which': {e}")
-    
-    # Final fallback: Force use of /usr/bin/docker if it exists (Yahboom confirmed location)
-    if os.path.exists('/usr/bin/docker'):
-        print("Fallback: Forcing use of /usr/bin/docker (confirmed location)")
-        return '/usr/bin/docker'
-    
-    # Last resort: try 'docker' from PATH
-    print("Warning: Using 'docker' from PATH (may fail if not in PATH)")
-    return 'docker'
+    # Hardcoded: Use /usr/bin/docker (confirmed location from terminal: which docker)
+    # Even if os.path.exists() fails in Python, we know docker is at /usr/bin/docker
+    docker_path = '/usr/bin/docker'
+    print(f"Using docker at: {docker_path} (hardcoded - confirmed from terminal)")
+    return docker_path
 
 def open_terminal_window(title, command):
     """Open a NEW visible terminal window with the given command (separate from robot_api terminal)."""
