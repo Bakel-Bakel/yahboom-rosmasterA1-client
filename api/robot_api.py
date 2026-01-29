@@ -823,6 +823,22 @@ def is_running_in_docker():
     
     return False
 
+def get_container_name():
+    """Best-effort detection of the current Docker container name/ID."""
+    # Primary: kernel hostname (Docker usually sets this to the container ID/name)
+    try:
+        return os.uname().nodename
+    except Exception:
+        pass
+
+    # Fallback: environment variables that might hold the container name
+    for key in ('HOSTNAME', 'CONTAINER_NAME'):
+        val = os.environ.get(key)
+        if val:
+            return val
+
+    return None
+
 def get_host_docker_command():
     """
     Get docker command that works from inside a container.
