@@ -804,6 +804,40 @@ def ensure_docker_container_running(container_name):
         print(f"Error ensuring docker container is running: {e}")
         return False
 
+def find_docker_command():
+    """Find the docker command, checking common locations."""
+    # Check common docker locations (in order of likelihood)
+    docker_paths = [
+        '/usr/bin/docker',      # Most common location
+        '/usr/local/bin/docker',
+        '/snap/bin/docker',
+    ]
+    
+    # First check if files exist
+    for docker_path in docker_paths:
+        if os.path.exists(docker_path) and os.access(docker_path, os.X_OK):
+            print(f"Found docker at: {docker_path}")
+            return docker_path
+    
+    # If not found in common locations, try 'which docker'
+    try:
+        which_result = subprocess.run(
+            ['which', 'docker'],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+        if which_result.returncode == 0:
+            docker_path = which_result.stdout.strip()
+            print(f"Found docker via 'which': {docker_path}")
+            return docker_path
+    except Exception as e:
+        print(f"Could not find docker with 'which': {e}")
+    
+    # Last resort: try 'docker' from PATH
+    print("Warning: Using 'docker' from PATH (may fail if not in PATH)")
+    return 'docker'
+
 def open_terminal_window(title, command):
     """Open a NEW visible terminal window with the given command (separate from robot_api terminal)."""
     import time
@@ -811,96 +845,135 @@ def open_terminal_window(title, command):
     # Use bash explicitly, not sh
     bash_cmd = '/bin/bash'
     
+    # Find docker command
+    docker_cmd = find_docker_command()
+    
+    # Replace 'docker' in command with full path if needed
+    if docker_cmd != 'docker' and 'docker exec' in command:
+        command = command.replace('docker exec', f'{docker_cmd} exec')
+        print(f"Using docker from: {docker_cmd}")
+    
+    # Detect which terminal is actually being used
+    def detect_terminal():
+        """Detect the terminal program being used."""
+        try:
+            # Check parent process to see what terminal we're running in
+            result = subprocess.run(
+                ['ps', '-p', str(os.getppid()), '-o', 'comm=',],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            parent_process = result.stdout.strip()
+            print(f"Detected parent process: {parent_process}")
+            
+            # Map parent process to terminal command
+            if 'gnome-terminal' in parent_process.lower():
+                return 'gnome-terminal'
+            elif 'xterm' in parent_process.lower():
+                return 'xterm'
+            elif 'konsole' in parent_process.lower():
+                return 'konsole'
+            elif 'terminator' in parent_process.lower():
+                return 'terminator'
+        except Exception as e:
+            print(f"Could not detect terminal: {e}")
+        
+        return None
+    
     # Check if we have DISPLAY (GUI available)
     display = os.environ.get('DISPLAY')
+    detected_terminal = detect_terminal()
     
-    if display:
-        # Try gnome-terminal first (most common on Ubuntu/Debian)
-        try:
-            # Use gnome-terminal with --new-window to ensure it's a NEW terminal
-            # Use bash explicitly to run command and keep terminal open
-            process = subprocess.Popen(
-                [
-                    'gnome-terminal',
-                    '--new-window',  # Force new window
-                    '--title', title,
-                    '--', bash_cmd, '-c', f"{command}; exec {bash_cmd}"  # Keep terminal open after command
-                ],
-                preexec_fn=os.setsid,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            time.sleep(1.5)  # Give terminal a moment to open
-            print(f"✓ Opened new terminal window: {title}")
-            return process
-        except FileNotFoundError:
-            print(f"gnome-terminal not found, trying xterm...")
-        
-        # Try xterm as fallback
-        try:
-            process = subprocess.Popen(
-                [
-                    'xterm',
-                    '-title', title,
-                    '-e', bash_cmd, '-c', f"{command}; exec {bash_cmd}"  # Keep terminal open
-                ],
-                preexec_fn=os.setsid,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            time.sleep(1.5)
-            print(f"✓ Opened new xterm window: {title}")
-            return process
-        except FileNotFoundError:
-            print(f"xterm not found, trying other terminals...")
-        
-        # Try other common terminals
-        for term_cmd in ['konsole', 'terminator', 'tilix', 'mate-terminal']:
+    # Try detected terminal first, then fallback to common ones
+    terminals_to_try = []
+    if detected_terminal:
+        terminals_to_try.append(detected_terminal)
+    
+    # Add common terminals
+    terminals_to_try.extend(['gnome-terminal', 'xterm', 'konsole', 'terminator', 'tilix', 'mate-terminal'])
+    
+    if display or detected_terminal:
+        for term_cmd in terminals_to_try:
             try:
-                if term_cmd == 'konsole':
+                if term_cmd == 'gnome-terminal':
+                    process = subprocess.Popen(
+                        [
+                            'gnome-terminal',
+                            '--new-window',
+                            '--title', title,
+                            '--', bash_cmd, '-c', f"{command}; exec {bash_cmd}"
+                        ],
+                        preexec_fn=os.setsid,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        env=os.environ.copy()  # Preserve environment including PATH
+                    )
+                elif term_cmd == 'xterm':
+                    process = subprocess.Popen(
+                        [
+                            'xterm',
+                            '-title', title,
+                            '-e', bash_cmd, '-c', f"{command}; exec {bash_cmd}"
+                        ],
+                        preexec_fn=os.setsid,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        env=os.environ.copy()
+                    )
+                elif term_cmd == 'konsole':
                     process = subprocess.Popen(
                         ['konsole', '--new-tab', '-e', bash_cmd, '-c', f"{command}; exec {bash_cmd}"],
                         preexec_fn=os.setsid,
                         stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
+                        stderr=subprocess.DEVNULL,
+                        env=os.environ.copy()
                     )
                 elif term_cmd == 'terminator':
                     process = subprocess.Popen(
                         ['terminator', '-e', f"{bash_cmd} -c '{command}; exec {bash_cmd}'"],
                         preexec_fn=os.setsid,
                         stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
+                        stderr=subprocess.DEVNULL,
+                        env=os.environ.copy()
                     )
                 elif term_cmd == 'tilix':
                     process = subprocess.Popen(
                         ['tilix', '-e', bash_cmd, '-c', f"{command}; exec {bash_cmd}"],
                         preexec_fn=os.setsid,
                         stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
+                        stderr=subprocess.DEVNULL,
+                        env=os.environ.copy()
                     )
                 elif term_cmd == 'mate-terminal':
                     process = subprocess.Popen(
                         ['mate-terminal', '--title', title, '-e', f"{bash_cmd} -c '{command}; exec {bash_cmd}'"],
                         preexec_fn=os.setsid,
                         stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
+                        stderr=subprocess.DEVNULL,
+                        env=os.environ.copy()
                     )
+                else:
+                    continue
+                
                 time.sleep(1.5)
                 print(f"✓ Opened new {term_cmd} window: {title}")
                 return process
             except FileNotFoundError:
+                if term_cmd == detected_terminal:
+                    print(f"⚠ Detected terminal '{detected_terminal}' not found in PATH, trying others...")
                 continue
     
     # If no GUI terminal available, run the command using bash explicitly
     print(f"⚠ No GUI terminal available. Running command directly with {bash_cmd}...")
-    log_file = f'/tmp/{title.lower().replace(" ", "_").replace("-", "_")}.log'
     print(f"  Command: {command}")
     print(f"  Output will be visible in the process")
     process = subprocess.Popen(
         command,
         shell=True,
         executable=bash_cmd,  # Use bash explicitly, not sh
-        preexec_fn=os.setsid
+        preexec_fn=os.setsid,
+        env=os.environ.copy()  # Preserve environment including PATH
     )
     return process
 
@@ -923,9 +996,13 @@ def start_3d_digital_twin():
         
         import time
         
+        # Find docker command path
+        docker_cmd = find_docker_command()
+        print(f"Using docker command: {docker_cmd}")
+        
         # Terminal 1: Open new terminal, enter docker container, then run camera launch
         print("Opening Terminal 1: Entering docker container and starting camera launch...")
-        camera_command = "docker exec -it cool_solomon /bin/bash -c 'ros2 launch ascamera hp60c.launch.py'"
+        camera_command = f"{docker_cmd} exec -it cool_solomon /bin/bash -c 'ros2 launch ascamera hp60c.launch.py'"
         camera_process = open_terminal_window("3D Digital Twin - Camera", camera_command)
         active_processes['digital_twin_camera'] = camera_process
         
@@ -935,13 +1012,13 @@ def start_3d_digital_twin():
         
         # Terminal 2: Open new terminal, enter docker container, then run mapping launch
         print("Opening Terminal 2: Entering docker container and starting mapping launch...")
-        mapping_command = "docker exec -it cool_solomon /bin/bash -c 'ros2 launch yahboomcar_nav map_rtabmap_launch.py'"
+        mapping_command = f"{docker_cmd} exec -it cool_solomon /bin/bash -c 'ros2 launch yahboomcar_nav map_rtabmap_launch.py'"
         mapping_process = open_terminal_window("3D Digital Twin - Mapping", mapping_command)
         active_processes['digital_twin_mapping'] = mapping_process
         
         # Terminal 3: Open new terminal, enter docker container, then run display launch
         print("Opening Terminal 3: Entering docker container and starting display launch...")
-        display_command = "docker exec -it cool_solomon /bin/bash -c 'ros2 launch yahboomcar_nav display_rtabmap_map_launch.py'"
+        display_command = f"{docker_cmd} exec -it cool_solomon /bin/bash -c 'ros2 launch yahboomcar_nav display_rtabmap_map_launch.py'"
         display_process = open_terminal_window("3D Digital Twin - Display", display_command)
         active_processes['digital_twin_display'] = display_process
         
