@@ -741,6 +741,97 @@ def get_navigation_status():
         }), 500
 
 
+def check_docker_container(container_name):
+    """Check if docker container exists and is running."""
+    try:
+        result = subprocess.run(
+            f"docker ps --format '{{{{.Names}}}}' | grep -q '^{container_name}$'",
+            shell=True,
+            capture_output=True,
+            text=True
+        )
+        return result.returncode == 0
+    except Exception as e:
+        print(f"Error checking docker container: {e}")
+        return False
+
+def open_terminal_window(title, command):
+    """Open a visible terminal window with the given command."""
+    import time
+    
+    # Check if we have DISPLAY (GUI available)
+    display = os.environ.get('DISPLAY')
+    
+    if display:
+        # Try gnome-terminal first (most common on Ubuntu/Debian)
+        try:
+            # Use gnome-terminal with -- bash -c to run command and keep terminal open
+            process = subprocess.Popen(
+                [
+                    'gnome-terminal',
+                    '--title', title,
+                    '--', 'bash', '-c', f"{command}; exec bash"  # Keep terminal open after command
+                ],
+                preexec_fn=os.setsid
+            )
+            time.sleep(1)  # Give terminal a moment to open
+            return process
+        except FileNotFoundError:
+            pass
+        
+        # Try xterm as fallback
+        try:
+            process = subprocess.Popen(
+                [
+                    'xterm',
+                    '-title', title,
+                    '-e', 'bash', '-c', f"{command}; exec bash"  # Keep terminal open
+                ],
+                preexec_fn=os.setsid
+            )
+            time.sleep(1)
+            return process
+        except FileNotFoundError:
+            pass
+    
+    # Fallback: Use screen session (works without GUI)
+    # Create a screen session with a name
+    screen_name = title.lower().replace(' ', '_')
+    try:
+        # Start screen session in detached mode with the command
+        subprocess.run(
+            ['screen', '-dmS', screen_name, 'bash', '-c', command],
+            check=True
+        )
+        print(f"Started screen session '{screen_name}' for {title}")
+        print(f"  To view: screen -r {screen_name}")
+        # Return a dummy process object
+        class ScreenProcess:
+            def __init__(self, name):
+                self.name = name
+                self.pid = None
+            
+            def poll(self):
+                # Check if screen session exists
+                result = subprocess.run(
+                    ['screen', '-list', self.name],
+                    capture_output=True,
+                    text=True
+                )
+                return None if result.returncode == 0 else 1
+        
+        return ScreenProcess(screen_name)
+    except Exception as e:
+        print(f"Failed to start screen session: {e}")
+        # Last resort: run in background but log output
+        return subprocess.Popen(
+            command,
+            shell=True,
+            preexec_fn=os.setsid,
+            stdout=open(f'/tmp/{screen_name}.log', 'w'),
+            stderr=subprocess.STDOUT
+        )
+
 @app.route('/api/3d-digital-twin/start', methods=['POST'])
 def start_3d_digital_twin():
     """Start 3D Digital Twin mission (camera, mapping, and display)."""
@@ -758,88 +849,122 @@ def start_3d_digital_twin():
                 'display_pid': active_processes['digital_twin_display'].pid if active_processes['digital_twin_display'] else None
             }), 200
         
-        # Terminal 1: Start camera launch, wait 5 seconds, then start mapping launch
-        # Note: Using docker exec without -it flags since we're running background processes
+        # Check if docker container exists
+        if not check_docker_container('cool_solomon'):
+            error_msg = "Docker container 'cool_solomon' not found or not running"
+            print(f"ERROR: {error_msg}")
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), 500
+        
         import time
-        print("Starting camera launch in docker container...")
-        camera_command = "docker exec cool_solomon bash -c 'ros2 launch ascamera hp60c.launch.py'"
-        camera_process = subprocess.Popen(
-            camera_command,
-            shell=True,
-            preexec_fn=os.setsid,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
+        
+        # Terminal 1: Start camera launch in visible terminal
+        print("Starting camera launch in docker container (Terminal 1)...")
+        camera_command = "docker exec -it cool_solomon bash -c 'ros2 launch ascamera hp60c.launch.py'"
+        camera_process = open_terminal_window("3D Digital Twin - Camera", camera_command)
         active_processes['digital_twin_camera'] = camera_process
         
         # Wait 5 seconds before starting mapping
         print("Waiting 5 seconds before starting mapping...")
         time.sleep(5)
         
-        # Terminal 1: Start mapping launch (in same terminal context, but as separate process)
-        print("Starting RTABMap mapping launch in docker container...")
-        mapping_command = "docker exec cool_solomon bash -c 'ros2 launch yahboomcar_nav map_rtabmap_launch.py'"
-        mapping_process = subprocess.Popen(
-            mapping_command,
-            shell=True,
-            preexec_fn=os.setsid,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
+        # Terminal 1 (continued): Start mapping launch in same terminal (chained)
+        # Actually, let's use a separate terminal for mapping
+        print("Starting RTABMap mapping launch in docker container (Terminal 2)...")
+        mapping_command = "docker exec -it cool_solomon bash -c 'ros2 launch yahboomcar_nav map_rtabmap_launch.py'"
+        mapping_process = open_terminal_window("3D Digital Twin - Mapping", mapping_command)
         active_processes['digital_twin_mapping'] = mapping_process
         
-        # Terminal 2: Start display launch (in new terminal/process)
-        print("Starting RTABMap display launch in docker container (separate process)...")
-        display_command = "docker exec cool_solomon bash -c 'ros2 launch yahboomcar_nav display_rtabmap_map_launch.py'"
-        display_process = subprocess.Popen(
-            display_command,
-            shell=True,
-            preexec_fn=os.setsid,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
+        # Terminal 3: Start display launch in separate terminal
+        print("Starting RTABMap display launch in docker container (Terminal 3)...")
+        display_command = "docker exec -it cool_solomon bash -c 'ros2 launch yahboomcar_nav display_rtabmap_map_launch.py'"
+        display_process = open_terminal_window("3D Digital Twin - Display", display_command)
         active_processes['digital_twin_display'] = display_process
         
         # Give processes a moment to start
-        time.sleep(2)
+        time.sleep(3)
         
         # Check if processes are still running
         camera_running = camera_process.poll() is None
         mapping_running = mapping_process.poll() is None if mapping_process else False
         display_running = display_process.poll() is None if display_process else False
         
+        # Get PIDs if available
+        camera_pid = getattr(camera_process, 'pid', None)
+        mapping_pid = getattr(mapping_process, 'pid', None)
+        display_pid = getattr(display_process, 'pid', None)
+        
         if camera_running and mapping_running and display_running:
             print(f"✓ 3D Digital Twin started successfully")
-            print(f"  Camera PID: {camera_process.pid}")
-            print(f"  Mapping PID: {mapping_process.pid}")
-            print(f"  Display PID: {display_process.pid}")
+            print(f"  Camera PID: {camera_pid}")
+            print(f"  Mapping PID: {mapping_pid}")
+            print(f"  Display PID: {display_pid}")
             return jsonify({
                 'success': True,
-                'message': '3D Digital Twin started successfully',
-                'camera_pid': camera_process.pid,
-                'mapping_pid': mapping_process.pid,
-                'display_pid': display_process.pid
+                'message': '3D Digital Twin started successfully. Check terminal windows for output.',
+                'camera_pid': camera_pid,
+                'mapping_pid': mapping_pid,
+                'display_pid': display_pid
             }), 200
         else:
-            # Some processes failed, clean up
+            # Some processes failed, get error details
             error_msg = []
+            error_details = []
+            
             if not camera_running:
                 error_msg.append("Camera launch failed")
+                # Try to get stderr if available
+                if hasattr(camera_process, 'stderr') and camera_process.stderr:
+                    try:
+                        camera_process.stderr.seek(0)
+                        err = camera_process.stderr.read().decode('utf-8', errors='ignore')
+                        if err:
+                            error_details.append(f"Camera error: {err[:200]}")
+                    except:
+                        pass
+            
             if not mapping_running:
                 error_msg.append("Mapping launch failed")
+                if hasattr(mapping_process, 'stderr') and mapping_process.stderr:
+                    try:
+                        mapping_process.stderr.seek(0)
+                        err = mapping_process.stderr.read().decode('utf-8', errors='ignore')
+                        if err:
+                            error_details.append(f"Mapping error: {err[:200]}")
+                    except:
+                        pass
+            
             if not display_running:
                 error_msg.append("Display launch failed")
+                if hasattr(display_process, 'stderr') and display_process.stderr:
+                    try:
+                        display_process.stderr.seek(0)
+                        err = display_process.stderr.read().decode('utf-8', errors='ignore')
+                        if err:
+                            error_details.append(f"Display error: {err[:200]}")
+                    except:
+                        pass
             
+            full_error = f"Some processes failed to start: {', '.join(error_msg)}"
+            if error_details:
+                full_error += f"\n\nDetails:\n" + "\n".join(error_details)
+            
+            print(f"ERROR: {full_error}")
             return jsonify({
                 'success': False,
-                'error': f"Some processes failed to start: {', '.join(error_msg)}"
+                'error': full_error
             }), 500
             
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
         print(f"Error starting 3D Digital Twin: {str(e)}")
+        print(f"Traceback: {error_trace}")
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': f"{str(e)}\n\nTraceback:\n{error_trace}"
         }), 500
 
 
