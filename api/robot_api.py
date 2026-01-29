@@ -806,6 +806,23 @@ def ensure_docker_container_running(container_name):
 
 def find_docker_command():
     """Find the docker command, checking common locations."""
+    # Debug: Check runtime environment
+    try:
+        runtime_path = os.environ.get('PATH', 'NOT SET')
+        print(f"DEBUG: Runtime PATH: {runtime_path}")
+    except:
+        print("DEBUG: Could not get PATH")
+    
+    try:
+        running_user = os.getlogin()
+        print(f"DEBUG: Running as user: {running_user}")
+    except:
+        try:
+            running_user = os.environ.get('USER', os.environ.get('USERNAME', 'unknown'))
+            print(f"DEBUG: Running as user (from env): {running_user}")
+        except:
+            print("DEBUG: Could not determine user")
+    
     # Check common docker locations (in order of likelihood)
     docker_paths = [
         '/usr/bin/docker',      # Most common location (Yahboom confirmed)
@@ -1364,6 +1381,29 @@ def health():
 if __name__ == '__main__':
     print('=' * 60)
     print('ROSMASTER-A1 Robot API Server')
+    print('=' * 60)
+    
+    # Debug: Print runtime environment at startup
+    print('\nDEBUG: Runtime Environment:')
+    try:
+        runtime_path = os.environ.get('PATH', 'NOT SET')
+        print(f"  Runtime PATH: {runtime_path}")
+    except Exception as e:
+        print(f"  Could not get PATH: {e}")
+    
+    try:
+        running_user = os.getlogin()
+        print(f"  Running as user: {running_user}")
+    except Exception as e:
+        try:
+            running_user = os.environ.get('USER', os.environ.get('USERNAME', 'unknown'))
+            print(f"  Running as user (from env): {running_user}")
+        except Exception as e2:
+            print(f"  Could not determine user: {e2}")
+    
+    # Check if docker is accessible
+    docker_cmd = find_docker_command()
+    print(f"  Docker command found: {docker_cmd}")
     print('=' * 60)
     
     # Install rosbridge-server on startup
