@@ -831,7 +831,7 @@ def open_terminal_window(title, command):
             print(f"✓ Opened new terminal window: {title}")
             return process
         except FileNotFoundError:
-            pass
+            print(f"gnome-terminal not found, trying xterm...")
         
         # Try xterm as fallback
         try:
@@ -849,47 +849,57 @@ def open_terminal_window(title, command):
             print(f"✓ Opened new xterm window: {title}")
             return process
         except FileNotFoundError:
-            pass
-    
-    # Fallback: Use screen session (works without GUI)
-    # Create a screen session with a name
-    screen_name = title.lower().replace(' ', '_').replace('-', '_')
-    try:
-        # Start screen session in detached mode with the command
-        subprocess.run(
-            ['screen', '-dmS', screen_name, 'bash', '-c', command],
-            check=True
-        )
-        print(f"✓ Started screen session '{screen_name}' for {title}")
-        print(f"  To view: screen -r {screen_name}")
-        # Return a dummy process object
-        class ScreenProcess:
-            def __init__(self, name):
-                self.name = name
-                self.pid = None
-            
-            def poll(self):
-                # Check if screen session exists
-                result = subprocess.run(
-                    ['screen', '-list', self.name],
-                    capture_output=True,
-                    text=True
-                )
-                return None if result.returncode == 0 else 1
+            print(f"xterm not found, trying other terminals...")
         
-        return ScreenProcess(screen_name)
-    except Exception as e:
-        print(f"Failed to start screen session: {e}")
-        # Last resort: run in background but log output
-        log_file = f'/tmp/{screen_name}.log'
-        print(f"  Logging to: {log_file}")
-        return subprocess.Popen(
-            command,
-            shell=True,
-            preexec_fn=os.setsid,
-            stdout=open(log_file, 'w'),
-            stderr=subprocess.STDOUT
-        )
+        # Try other common terminals
+        for term_cmd in ['konsole', 'terminator', 'tilix', 'mate-terminal']:
+            try:
+                if term_cmd == 'konsole':
+                    process = subprocess.Popen(
+                        ['konsole', '--new-tab', '-e', 'bash', '-c', f"{command}; exec bash"],
+                        preexec_fn=os.setsid,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                elif term_cmd == 'terminator':
+                    process = subprocess.Popen(
+                        ['terminator', '-e', f"bash -c '{command}; exec bash'"],
+                        preexec_fn=os.setsid,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                elif term_cmd == 'tilix':
+                    process = subprocess.Popen(
+                        ['tilix', '-e', 'bash', '-c', f"{command}; exec bash"],
+                        preexec_fn=os.setsid,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                elif term_cmd == 'mate-terminal':
+                    process = subprocess.Popen(
+                        ['mate-terminal', '--title', title, '-e', f"bash -c '{command}; exec bash'"],
+                        preexec_fn=os.setsid,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                time.sleep(1.5)
+                print(f"✓ Opened new {term_cmd} window: {title}")
+                return process
+            except FileNotFoundError:
+                continue
+    
+    # If no GUI terminal available, just run the command directly
+    # This will show output in the current terminal or log it
+    print(f"⚠ No GUI terminal available. Running command directly...")
+    log_file = f'/tmp/{title.lower().replace(" ", "_").replace("-", "_")}.log'
+    print(f"  Command: {command}")
+    print(f"  Output will be visible in the process")
+    process = subprocess.Popen(
+        command,
+        shell=True,
+        preexec_fn=os.setsid
+    )
+    return process
 
 @app.route('/api/3d-digital-twin/start', methods=['POST'])
 def start_3d_digital_twin():
