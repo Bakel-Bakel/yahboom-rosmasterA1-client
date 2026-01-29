@@ -808,6 +808,9 @@ def open_terminal_window(title, command):
     """Open a NEW visible terminal window with the given command (separate from robot_api terminal)."""
     import time
     
+    # Use bash explicitly, not sh
+    bash_cmd = '/bin/bash'
+    
     # Check if we have DISPLAY (GUI available)
     display = os.environ.get('DISPLAY')
     
@@ -815,13 +818,13 @@ def open_terminal_window(title, command):
         # Try gnome-terminal first (most common on Ubuntu/Debian)
         try:
             # Use gnome-terminal with --new-window to ensure it's a NEW terminal
-            # Use -- bash -c to run command and keep terminal open
+            # Use bash explicitly to run command and keep terminal open
             process = subprocess.Popen(
                 [
                     'gnome-terminal',
                     '--new-window',  # Force new window
                     '--title', title,
-                    '--', 'bash', '-c', f"{command}; exec bash"  # Keep terminal open after command
+                    '--', bash_cmd, '-c', f"{command}; exec {bash_cmd}"  # Keep terminal open after command
                 ],
                 preexec_fn=os.setsid,
                 stdout=subprocess.DEVNULL,
@@ -839,7 +842,7 @@ def open_terminal_window(title, command):
                 [
                     'xterm',
                     '-title', title,
-                    '-e', 'bash', '-c', f"{command}; exec bash"  # Keep terminal open
+                    '-e', bash_cmd, '-c', f"{command}; exec {bash_cmd}"  # Keep terminal open
                 ],
                 preexec_fn=os.setsid,
                 stdout=subprocess.DEVNULL,
@@ -856,28 +859,28 @@ def open_terminal_window(title, command):
             try:
                 if term_cmd == 'konsole':
                     process = subprocess.Popen(
-                        ['konsole', '--new-tab', '-e', 'bash', '-c', f"{command}; exec bash"],
+                        ['konsole', '--new-tab', '-e', bash_cmd, '-c', f"{command}; exec {bash_cmd}"],
                         preexec_fn=os.setsid,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL
                     )
                 elif term_cmd == 'terminator':
                     process = subprocess.Popen(
-                        ['terminator', '-e', f"bash -c '{command}; exec bash'"],
+                        ['terminator', '-e', f"{bash_cmd} -c '{command}; exec {bash_cmd}'"],
                         preexec_fn=os.setsid,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL
                     )
                 elif term_cmd == 'tilix':
                     process = subprocess.Popen(
-                        ['tilix', '-e', 'bash', '-c', f"{command}; exec bash"],
+                        ['tilix', '-e', bash_cmd, '-c', f"{command}; exec {bash_cmd}"],
                         preexec_fn=os.setsid,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL
                     )
                 elif term_cmd == 'mate-terminal':
                     process = subprocess.Popen(
-                        ['mate-terminal', '--title', title, '-e', f"bash -c '{command}; exec bash'"],
+                        ['mate-terminal', '--title', title, '-e', f"{bash_cmd} -c '{command}; exec {bash_cmd}'"],
                         preexec_fn=os.setsid,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL
@@ -888,15 +891,15 @@ def open_terminal_window(title, command):
             except FileNotFoundError:
                 continue
     
-    # If no GUI terminal available, just run the command directly
-    # This will show output in the current terminal or log it
-    print(f"⚠ No GUI terminal available. Running command directly...")
+    # If no GUI terminal available, run the command using bash explicitly
+    print(f"⚠ No GUI terminal available. Running command directly with {bash_cmd}...")
     log_file = f'/tmp/{title.lower().replace(" ", "_").replace("-", "_")}.log'
     print(f"  Command: {command}")
     print(f"  Output will be visible in the process")
     process = subprocess.Popen(
         command,
         shell=True,
+        executable=bash_cmd,  # Use bash explicitly, not sh
         preexec_fn=os.setsid
     )
     return process
@@ -922,7 +925,7 @@ def start_3d_digital_twin():
         
         # Terminal 1: Open new terminal, enter docker container, then run camera launch
         print("Opening Terminal 1: Entering docker container and starting camera launch...")
-        camera_command = "docker exec -it cool_solomon bash -c 'ros2 launch ascamera hp60c.launch.py'"
+        camera_command = "docker exec -it cool_solomon /bin/bash -c 'ros2 launch ascamera hp60c.launch.py'"
         camera_process = open_terminal_window("3D Digital Twin - Camera", camera_command)
         active_processes['digital_twin_camera'] = camera_process
         
@@ -932,13 +935,13 @@ def start_3d_digital_twin():
         
         # Terminal 2: Open new terminal, enter docker container, then run mapping launch
         print("Opening Terminal 2: Entering docker container and starting mapping launch...")
-        mapping_command = "docker exec -it cool_solomon bash -c 'ros2 launch yahboomcar_nav map_rtabmap_launch.py'"
+        mapping_command = "docker exec -it cool_solomon /bin/bash -c 'ros2 launch yahboomcar_nav map_rtabmap_launch.py'"
         mapping_process = open_terminal_window("3D Digital Twin - Mapping", mapping_command)
         active_processes['digital_twin_mapping'] = mapping_process
         
         # Terminal 3: Open new terminal, enter docker container, then run display launch
         print("Opening Terminal 3: Entering docker container and starting display launch...")
-        display_command = "docker exec -it cool_solomon bash -c 'ros2 launch yahboomcar_nav display_rtabmap_map_launch.py'"
+        display_command = "docker exec -it cool_solomon /bin/bash -c 'ros2 launch yahboomcar_nav display_rtabmap_map_launch.py'"
         display_process = open_terminal_window("3D Digital Twin - Display", display_command)
         active_processes['digital_twin_display'] = display_process
         
