@@ -1163,7 +1163,7 @@ def start_3d_digital_twin():
         # ------------------------------------------------------------------
         try:
             debug_cmd = (
-                f"{docker_cmd} exec flamboyant_wilbur "
+                f"{docker_cmd} exec nice_hawking "
                 "/bin/bash -c '"
                 "echo \"[DEBUG inside container] Waiting for /opt/ros/humble/setup.bash\"; "
                 "until [ -f /opt/ros/humble/setup.bash ]; do sleep 1; done; "
@@ -1201,8 +1201,8 @@ def start_3d_digital_twin():
         # Terminal 1: Open new terminal, enter docker container, then run camera launch
         print("Opening Terminal 1: Entering docker container and starting camera launch...")
         camera_command = (
-            f"{docker_cmd} exec -it flamboyant_wilbur /bin/bash -c "
-            "'echo \"[CAMERA] Attached to container flamboyant_wilbur\"; "
+            f"{docker_cmd} exec -it nice_hawking /bin/bash -c "
+            "'echo \"[CAMERA] Attached to container nice_hawking\"; "
             "echo \"[CAMERA] Waiting for /opt/ros/humble/setup.bash\"; "
             "until [ -f /opt/ros/humble/setup.bash ]; do sleep 1; done; "
             "echo \"[CAMERA] Sourcing /opt/ros/humble/setup.bash\"; "
@@ -1230,8 +1230,8 @@ def start_3d_digital_twin():
         # Terminal 2: Open new terminal, enter docker container, then run mapping launch
         print("Opening Terminal 2: Entering docker container and starting mapping launch...")
         mapping_command = (
-            f"{docker_cmd} exec -it flamboyant_wilbur /bin/bash -c "
-            "'echo \"[MAPPING] Attached to container flamboyant_wilbur\"; "
+            f"{docker_cmd} exec -it nice_hawking /bin/bash -c "
+            "'echo \"[MAPPING] Attached to container nice_hawking\"; "
             "echo \"[MAPPING] Waiting for /opt/ros/humble/setup.bash\"; "
             "until [ -f /opt/ros/humble/setup.bash ]; do sleep 1; done; "
             "echo \"[MAPPING] Sourcing /opt/ros/humble/setup.bash\"; "
@@ -1255,8 +1255,8 @@ def start_3d_digital_twin():
         # Terminal 3: Open new terminal, enter docker container, then run display launch
         print("Opening Terminal 3: Entering docker container and starting display launch...")
         display_command = (
-            f"{docker_cmd} exec -it flamboyant_wilbur /bin/bash -c "
-            "'echo \"[DISPLAY] Attached to container flamboyant_wilbur\"; "
+            f"{docker_cmd} exec -it nice_hawking /bin/bash -c "
+            "'echo \"[DISPLAY] Attached to container nice_hawking\"; "
             "echo \"[DISPLAY] Waiting for /opt/ros/humble/setup.bash\"; "
             "until [ -f /opt/ros/humble/setup.bash ]; do sleep 1; done; "
             "echo \"[DISPLAY] Sourcing /opt/ros/humble/setup.bash\"; "
@@ -1388,7 +1388,7 @@ def stop_3d_digital_twin():
                     temp_file = os.path.join(temp_dir, 'rtabmap.db')
                     
                     # Copy file from docker container
-                    copy_cmd = f"docker cp flamboyant_wilbur:/root/.ros/rtabmap.db {temp_file}"
+                    copy_cmd = f"docker cp nice_hawking:/root/.ros/rtabmap.db {temp_file}"
                     result = subprocess.run(
                         copy_cmd,
                         shell=True,
