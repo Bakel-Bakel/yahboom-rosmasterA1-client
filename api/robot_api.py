@@ -808,31 +808,47 @@ def find_docker_command():
     """Find the docker command, checking common locations."""
     # Check common docker locations (in order of likelihood)
     docker_paths = [
-        '/usr/bin/docker',      # Most common location
+        '/usr/bin/docker',      # Most common location (Yahboom confirmed)
         '/usr/local/bin/docker',
         '/snap/bin/docker',
     ]
     
+    print(f"DEBUG: Checking docker paths: {docker_paths}")
+    
     # First check if files exist
     for docker_path in docker_paths:
-        if os.path.exists(docker_path) and os.access(docker_path, os.X_OK):
-            print(f"Found docker at: {docker_path}")
+        exists = os.path.exists(docker_path)
+        executable = os.access(docker_path, os.X_OK) if exists else False
+        print(f"DEBUG: Checking {docker_path} - Exists: {exists}, Executable: {executable}")
+        
+        if exists and executable:
+            print(f"✓ Found docker at: {docker_path}")
             return docker_path
     
-    # If not found in common locations, try 'which docker'
+    # If not found in common locations, try 'which docker' with proper PATH
     try:
+        # Ensure PATH includes common locations
+        env = os.environ.copy()
+        env['PATH'] = '/usr/bin:/usr/local/bin:/snap/bin:' + env.get('PATH', '')
+        
         which_result = subprocess.run(
             ['which', 'docker'],
             capture_output=True,
             text=True,
-            timeout=2
+            timeout=2,
+            env=env
         )
         if which_result.returncode == 0:
             docker_path = which_result.stdout.strip()
-            print(f"Found docker via 'which': {docker_path}")
+            print(f"✓ Found docker via 'which': {docker_path}")
             return docker_path
     except Exception as e:
         print(f"Could not find docker with 'which': {e}")
+    
+    # Final fallback: Force use of /usr/bin/docker if it exists (Yahboom confirmed location)
+    if os.path.exists('/usr/bin/docker'):
+        print("Fallback: Forcing use of /usr/bin/docker (confirmed location)")
+        return '/usr/bin/docker'
     
     # Last resort: try 'docker' from PATH
     print("Warning: Using 'docker' from PATH (may fail if not in PATH)")
@@ -885,6 +901,10 @@ def open_terminal_window(title, command):
     display = os.environ.get('DISPLAY')
     detected_terminal = detect_terminal()
     
+    # Ensure PATH includes common locations for docker and other tools
+    enhanced_env = os.environ.copy()
+    enhanced_env['PATH'] = '/usr/bin:/usr/local/bin:/snap/bin:' + enhanced_env.get('PATH', '')
+    
     # Try detected terminal first, then fallback to common ones
     terminals_to_try = []
     if detected_terminal:
@@ -907,7 +927,7 @@ def open_terminal_window(title, command):
                         preexec_fn=os.setsid,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
-                        env=os.environ.copy()  # Preserve environment including PATH
+                        env=enhanced_env  # Use enhanced PATH
                     )
                 elif term_cmd == 'xterm':
                     process = subprocess.Popen(
@@ -919,7 +939,7 @@ def open_terminal_window(title, command):
                         preexec_fn=os.setsid,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
-                        env=os.environ.copy()
+                        env=enhanced_env  # Use enhanced PATH
                     )
                 elif term_cmd == 'konsole':
                     process = subprocess.Popen(
@@ -927,7 +947,7 @@ def open_terminal_window(title, command):
                         preexec_fn=os.setsid,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
-                        env=os.environ.copy()
+                        env=enhanced_env  # Use enhanced PATH
                     )
                 elif term_cmd == 'terminator':
                     process = subprocess.Popen(
@@ -935,7 +955,7 @@ def open_terminal_window(title, command):
                         preexec_fn=os.setsid,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
-                        env=os.environ.copy()
+                        env=enhanced_env  # Use enhanced PATH
                     )
                 elif term_cmd == 'tilix':
                     process = subprocess.Popen(
@@ -943,7 +963,7 @@ def open_terminal_window(title, command):
                         preexec_fn=os.setsid,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
-                        env=os.environ.copy()
+                        env=enhanced_env  # Use enhanced PATH
                     )
                 elif term_cmd == 'mate-terminal':
                     process = subprocess.Popen(
@@ -951,7 +971,7 @@ def open_terminal_window(title, command):
                         preexec_fn=os.setsid,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
-                        env=os.environ.copy()
+                        env=enhanced_env  # Use enhanced PATH
                     )
                 else:
                     continue
@@ -968,12 +988,17 @@ def open_terminal_window(title, command):
     print(f"⚠ No GUI terminal available. Running command directly with {bash_cmd}...")
     print(f"  Command: {command}")
     print(f"  Output will be visible in the process")
+    
+    # Ensure PATH includes common locations for docker and other tools
+    env = os.environ.copy()
+    env['PATH'] = '/usr/bin:/usr/local/bin:/snap/bin:' + env.get('PATH', '')
+    
     process = subprocess.Popen(
         command,
         shell=True,
         executable=bash_cmd,  # Use bash explicitly, not sh
         preexec_fn=os.setsid,
-        env=os.environ.copy()  # Preserve environment including PATH
+        env=env  # Use enhanced PATH
     )
     return process
 
