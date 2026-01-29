@@ -1158,7 +1158,7 @@ def start_3d_digital_twin():
         
         # Terminal 1: Open new terminal, enter docker container, then run camera launch
         print("Opening Terminal 1: Entering docker container and starting camera launch...")
-        camera_command = f"{docker_cmd} exec -it cool_solomon /bin/bash -c 'ros2 launch ascamera hp60c.launch.py'"
+        camera_command = f"{docker_cmd} exec -it flamboyant_wilbur /bin/bash -c 'ros2 launch ascamera hp60c.launch.py'"
         camera_process = open_terminal_window("3D Digital Twin - Camera", camera_command)
         active_processes['digital_twin_camera'] = camera_process
         
@@ -1168,13 +1168,13 @@ def start_3d_digital_twin():
         
         # Terminal 2: Open new terminal, enter docker container, then run mapping launch
         print("Opening Terminal 2: Entering docker container and starting mapping launch...")
-        mapping_command = f"{docker_cmd} exec -it cool_solomon /bin/bash -c 'ros2 launch yahboomcar_nav map_rtabmap_launch.py'"
+        mapping_command = f"{docker_cmd} exec -it flamboyant_wilbur /bin/bash -c 'ros2 launch yahboomcar_nav map_rtabmap_launch.py'"
         mapping_process = open_terminal_window("3D Digital Twin - Mapping", mapping_command)
         active_processes['digital_twin_mapping'] = mapping_process
         
         # Terminal 3: Open new terminal, enter docker container, then run display launch
         print("Opening Terminal 3: Entering docker container and starting display launch...")
-        display_command = f"{docker_cmd} exec -it cool_solomon /bin/bash -c 'ros2 launch yahboomcar_nav display_rtabmap_map_launch.py'"
+        display_command = f"{docker_cmd} exec -it flamboyant_wilbur /bin/bash -c 'ros2 launch yahboomcar_nav display_rtabmap_map_launch.py'"
         display_process = open_terminal_window("3D Digital Twin - Display", display_command)
         active_processes['digital_twin_display'] = display_process
         
@@ -1289,7 +1289,7 @@ def stop_3d_digital_twin():
                     temp_file = os.path.join(temp_dir, 'rtabmap.db')
                     
                     # Copy file from docker container
-                    copy_cmd = f"docker cp cool_solomon:/root/.ros/rtabmap.db {temp_file}"
+                    copy_cmd = f"docker cp flamboyant_wilbur:/root/.ros/rtabmap.db {temp_file}"
                     result = subprocess.run(
                         copy_cmd,
                         shell=True,
