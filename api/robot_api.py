@@ -1428,6 +1428,10 @@ def stop_3d_digital_twin():
         mission_control_url = data.get('mission_control_url', 'http://192.168.1.136:8002')
         robot_id = data.get('robot_id', 'unknown')
         
+        # Debug: Show what URL was received
+        print(f"[DEBUG] Received mission_control_url from request: {data.get('mission_control_url', 'NOT PROVIDED - using default')}")
+        print(f"[DEBUG] Using mission_control_url: {mission_control_url}")
+        
         stopped_processes = []
         database_transferred = False
         
