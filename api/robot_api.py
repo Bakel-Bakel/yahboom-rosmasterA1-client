@@ -1465,22 +1465,36 @@ def stop_3d_digital_twin():
                                 
                                 upload_url = f"{mission_control_url}/api/digital-twin/upload-database"
                                 print(f"Sending RTABMap database to {upload_url}...")
+                                print(f"  Mission ID: {mission_id}")
+                                print(f"  Robot ID: {robot_id}")
                                 
-                                response = requests.post(
-                                    upload_url,
-                                    files=files,
-                                    data=data_form,
-                                    timeout=60
-                                )
-                                
-                                if response.status_code == 200:
-                                    result_data = response.json()
-                                    print(f"✓ Successfully transferred RTABMap database: {result_data.get('filename')}")
-                                    database_transferred = True
-                                else:
-                                    print(f"✗ Failed to transfer database: {response.status_code} - {response.text}")
+                                try:
+                                    response = requests.post(
+                                        upload_url,
+                                        files=files,
+                                        data=data_form,
+                                        timeout=60
+                                    )
+                                    
+                                    if response.status_code == 200:
+                                        result_data = response.json()
+                                        print(f"✓ Successfully transferred RTABMap database: {result_data.get('filename')}")
+                                        database_transferred = True
+                                    else:
+                                        print(f"✗ Failed to transfer database: {response.status_code} - {response.text}")
+                                except requests.exceptions.ConnectionError as e:
+                                    print(f"✗ Connection error: Cannot reach mission control at {upload_url}")
+                                    print(f"  Error details: {e}")
+                                    print(f"  Note: If 'localhost' is used, the robot cannot reach mission control on a different machine.")
+                                    print(f"  Solution: Use the actual IP address or hostname of the mission control server.")
+                                    print(f"  Current mission_control_url: {mission_control_url}")
+                                except requests.exceptions.Timeout as e:
+                                    print(f"✗ Timeout error: Mission control did not respond within 60 seconds")
+                                    print(f"  Error details: {e}")
+                                except Exception as e:
+                                    print(f"✗ Error sending database: {type(e).__name__}: {e}")
                         except Exception as e:
-                            print(f"Error sending database to mission control: {e}")
+                            print(f"Error preparing database upload: {e}")
                         
                         # Clean up temporary file
                         try:
