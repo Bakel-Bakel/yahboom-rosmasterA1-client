@@ -1425,7 +1425,7 @@ def stop_3d_digital_twin():
         # Get mission_id and mission_control_url from request
         data = request.get_json() or {}
         mission_id = data.get('mission_id')
-        mission_control_url = data.get('mission_control_url', 'http://localhost:8002')
+        mission_control_url = data.get('mission_control_url', 'http://192.168.1.136:8002')
         robot_id = data.get('robot_id', 'unknown')
         
         stopped_processes = []
