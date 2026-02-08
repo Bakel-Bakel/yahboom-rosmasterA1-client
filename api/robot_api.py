@@ -308,6 +308,60 @@ def start_rosbridge():
         return False, None, f"Error starting rosbridge_server: {str(e)}"
 
 
+def start_rosbridge_in_terminal():
+    """Start rosbridge_server in a visible terminal window."""
+    global active_processes
+    
+    # Check if already running
+    if active_processes['rosbridge'] is not None:
+        if active_processes['rosbridge'].poll() is None:
+            print("rosbridge_server is already running")
+            return True, active_processes['rosbridge'].pid, None
+        else:
+            # Process died, reset it
+            active_processes['rosbridge'] = None
+    
+    # Check if rosbridge is installed
+    if not check_rosbridge_installed():
+        return False, None, "rosbridge-server is not installed. Please install it first."
+    
+    # Detect ROS2 setup
+    ros2_setup = detect_ros2_setup()
+    if not ros2_setup:
+        return False, None, "ROS2 setup.bash not found. Please ensure ROS2 is installed."
+    
+    # Get current domain ID
+    domain_id = current_domain_id if current_domain_id is not None else os.environ.get('ROS_DOMAIN_ID', '0')
+    
+    # Build the command to source ROS2 and launch rosbridge
+    launch_cmd = f'source {ros2_setup} && export ROS_DOMAIN_ID={domain_id} && ros2 launch rosbridge_server rosbridge_websocket_launch.xml'
+    
+    try:
+        print("Starting rosbridge_server in terminal window...")
+        # Use open_terminal_window to launch in a visible terminal
+        process = open_terminal_window("rosbridge_server", launch_cmd)
+        
+        if process:
+            active_processes['rosbridge'] = process
+            
+            # Wait a moment to check if it started successfully
+            import time
+            time.sleep(2)
+            
+            if process.poll() is None:
+                print(f"✓ rosbridge_server started in terminal (PID: {process.pid}, ROS_DOMAIN_ID: {domain_id})")
+                return True, process.pid, None
+            else:
+                # Process died immediately
+                active_processes['rosbridge'] = None
+                return False, None, "rosbridge_server terminal closed immediately"
+        else:
+            return False, None, "Failed to open terminal window for rosbridge_server"
+            
+    except Exception as e:
+        return False, None, f"Error starting rosbridge_server in terminal: {str(e)}"
+
+
 def stop_rosbridge():
     """Stop rosbridge_server process."""
     global active_processes
@@ -1163,7 +1217,7 @@ def start_3d_digital_twin():
         # ------------------------------------------------------------------
         try:
             debug_cmd = (
-                f"{docker_cmd} exec elated_bhaskara "
+                f"{docker_cmd} exec nice_hawking "
                 "/bin/bash -c '"
                 "echo \"[DEBUG inside container] Waiting for /opt/ros/humble/setup.bash\"; "
                 "until [ -f /opt/ros/humble/setup.bash ]; do sleep 1; done; "
@@ -1201,8 +1255,8 @@ def start_3d_digital_twin():
         # Terminal 1: Open new terminal, enter docker container, then run camera launch
         print("Opening Terminal 1: Entering docker container and starting camera launch...")
         camera_command = (
-            f"{docker_cmd} exec -it elated_bhaskara /bin/bash -c "
-            "'echo \"[CAMERA] Attached to container elated_bhaskara\"; "
+            f"{docker_cmd} exec -it nice_hawking /bin/bash -c "
+            "'echo \"[CAMERA] Attached to container nice_hawking\"; "
             "echo \"[CAMERA] Waiting for /opt/ros/humble/setup.bash\"; "
             "until [ -f /opt/ros/humble/setup.bash ]; do sleep 1; done; "
             "echo \"[CAMERA] Sourcing /opt/ros/humble/setup.bash\"; "
@@ -1230,8 +1284,8 @@ def start_3d_digital_twin():
         # Terminal 2: Open new terminal, enter docker container, then run mapping launch
         print("Opening Terminal 2: Entering docker container and starting mapping launch...")
         mapping_command = (
-            f"{docker_cmd} exec -it elated_bhaskara /bin/bash -c "
-            "'echo \"[MAPPING] Attached to container elated_bhaskara\"; "
+            f"{docker_cmd} exec -it nice_hawking /bin/bash -c "
+            "'echo \"[MAPPING] Attached to container nice_hawking\"; "
             "echo \"[MAPPING] Waiting for /opt/ros/humble/setup.bash\"; "
             "until [ -f /opt/ros/humble/setup.bash ]; do sleep 1; done; "
             "echo \"[MAPPING] Sourcing /opt/ros/humble/setup.bash\"; "
@@ -1255,8 +1309,8 @@ def start_3d_digital_twin():
         # Terminal 3: Open new terminal, enter docker container, then run display launch
         print("Opening Terminal 3: Entering docker container and starting display launch...")
         display_command = (
-            f"{docker_cmd} exec -it elated_bhaskara /bin/bash -c "
-            "'echo \"[DISPLAY] Attached to container elated_bhaskara\"; "
+            f"{docker_cmd} exec -it nice_hawking /bin/bash -c "
+            "'echo \"[DISPLAY] Attached to container nice_hawking\"; "
             "echo \"[DISPLAY] Waiting for /opt/ros/humble/setup.bash\"; "
             "until [ -f /opt/ros/humble/setup.bash ]; do sleep 1; done; "
             "echo \"[DISPLAY] Sourcing /opt/ros/humble/setup.bash\"; "
@@ -1388,7 +1442,7 @@ def stop_3d_digital_twin():
                     temp_file = os.path.join(temp_dir, 'rtabmap.db')
                     
                     # Copy file from docker container
-                    copy_cmd = f"docker cp elated_bhaskara:/root/.ros/rtabmap.db {temp_file}"
+                    copy_cmd = f"docker cp nice_hawking:/root/.ros/rtabmap.db {temp_file}"
                     result = subprocess.run(
                         copy_cmd,
                         shell=True,
@@ -1627,6 +1681,15 @@ if __name__ == '__main__':
         print('Please install manually: sudo apt install ros-humble-rosbridge-server')
     else:
         print('\n✓ rosbridge-server installation check complete')
+        
+        # Automatically start rosbridge_server in a terminal window
+        print('Starting rosbridge_server in background terminal...')
+        success, pid, error = start_rosbridge_in_terminal()
+        if success:
+            print(f'✓ rosbridge_server started automatically (PID: {pid})')
+        else:
+            print(f'⚠ Could not start rosbridge_server automatically: {error}')
+            print('  You can start it manually using: POST /api/rosbridge/start')
     
     print('\n' + '=' * 60)
     print('Starting Robot API Server...')
